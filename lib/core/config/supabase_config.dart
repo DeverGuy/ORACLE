@@ -1,3 +1,19 @@
+/// View names
+class Views {
+  static const String allocationBalances = 'allocation_balances';
+  static const String defaulters         = 'defaulters';
+}
+
+/// RPC function names
+class RPCs {
+  static const String recalculateAllocationStatus = 'recalculate_allocation_status';
+}
+
+/// Realtime channel names
+class Channels {
+  static const String transactions = 'public:transactions';
+  static const String allocations  = 'public:student_allocations';
+}
 /// ORACLE — Supabase client configuration
 /// Replace SUPABASE_URL and SUPABASE_ANON_KEY with your project credentials.
 
@@ -15,21 +31,4 @@ class Tables {
   static const String studentAllocations = 'student_allocations';
   static const String adjustments        = 'adjustments';
   static const String transactions       = 'transactions';
-}
-
-/// View names
-class Views {
-  static const String allocationBalances = 'allocation_balances';
-  static const String defaulters         = 'defaulters';
-}
-
-/// RPC function names
-class RPCs {
-  static const String recalculateAllocationStatus = 'recalculate_allocation_status';
-}
-
-/// Realtime channel names
-class Channels {
-  static const String transactions = 'public:transactions';
-  static const String allocations  = 'public:student_allocations';
 }

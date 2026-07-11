@@ -19,6 +19,7 @@ import '../features/payments/screens/manual_entry_screen.dart';
 import '../features/students/screens/student_ledger_screen.dart';
 import '../features/settings/screens/fee_structure_screen.dart';
 import '../features/students/screens/manage_users_screen.dart';
+import '../features/dashboard/screens/portal_dashboard_screen.dart';
 
 final authNotifier = ValueNotifier<bool>(Supabase.instance.client.auth.currentSession != null);
 
@@ -128,10 +129,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/portal/dashboard',
-        builder: (ctx, _) => const Scaffold(
-          body: Center(child: Text("Student / Parent Dashboard (Coming Soon)", style: TextStyle(color: Colors.white, fontSize: 24))),
-          backgroundColor: Color(0xFF080C14), // AppColors.bg0 equivalent
-        ),
+        builder: (ctx, _) => const PortalDashboardScreen(),
+        routes: [
+          GoRoute(
+            path: 'payment/:allocationId',
+            builder: (ctx, state) => PaymentScreen(
+              allocationId: state.pathParameters['allocationId']!,
+            ),
+          ),
+        ],
       ),
     ],
   );

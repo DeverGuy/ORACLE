@@ -51,6 +51,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      await Supabase.instance.client.auth.signInWithOAuth(
+        OAuthProvider.google,
+      );
+    } on AuthException catch (e) {
+      setState(() => _error = e.message);
+    } catch (e) {
+      setState(() => _error = 'An unexpected error occurred with Google Sign-in.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -176,7 +191,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                         ],
 
-                        const SizedBox(height: 28),
+                        const SizedBox(height: 16),
+                        
+                        // Remember Me Checkbox
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _rememberMe,
+                              onChanged: (val) {
+                                setState(() {
+                                  _rememberMe = val ?? false;
+                                });
+                              },
+                              activeColor: AppColors.blobSky,
+                              side: const BorderSide(color: AppColors.textSecondary),
+                            ),
+                            const Text('Remember Me', style: TextStyle(color: AppColors.textPrimary)),
+                          ],
+                        ),
+
+                        const SizedBox(height: 16),
 
                         // Sign In button
                         SizedBox(
@@ -209,9 +243,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         SizedBox(
                           height: 52,
                           child: OutlinedButton.icon(
-                            onPressed: () {
-                              // TODO: Implement Google OAuth
-                            },
+                            onPressed: _loading ? null : _signInWithGoogle,
                             icon: const Icon(Icons.g_mobiledata, size: 32, color: Colors.white),
                             label: const Text('Continue with Google', style: TextStyle(color: Colors.white, fontSize: 15)),
                             style: OutlinedButton.styleFrom(

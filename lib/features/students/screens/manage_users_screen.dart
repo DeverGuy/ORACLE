@@ -26,11 +26,14 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
   String _selectedRole = 'student';
   
   bool _isSubmitting = false;
+  bool _isLoadingUsers = false;
+  List<Map<String, dynamic>> _users = [];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    _fetchUsers();
   }
 
   @override
@@ -66,14 +69,29 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
           ]
         }
       );
-      
       if (res.status == 200) {
+        final responseData = res.data;
+        final results = responseData['results'] as List<dynamic>? ?? [];
+        final hasError = results.any((r) => r['success'] == false);
+        
+        if (hasError) {
+          final errorMsg = results.firstWhere((r) => r['success'] == false)['error'];
+          throw Exception('Failed: $errorMsg');
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User created successfully!', style: TextStyle(color: Colors.white)), backgroundColor: AppColors.success));
           _nameCtrl.clear();
           _emailCtrl.clear();
           _phoneCtrl.clear();
           _passwordCtrl.clear();
+          
+          // Switch to Members List tab
+          _tabController.animateTo(0);
+          
+          // Slight delay to ensure DB commit is visible
+          await Future.delayed(const Duration(milliseconds: 500));
+          _fetchUsers();
         }
       } else {
         throw Exception('Failed to create user');
@@ -161,6 +179,13 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
         if (res.status == 200) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Successfully created ${usersPayload.length} users!', style: const TextStyle(color: Colors.white)), backgroundColor: AppColors.success));
+            
+            // Switch to Members List tab
+            _tabController.animateTo(0);
+            
+            // Slight delay to ensure DB commit is visible
+            await Future.delayed(const Duration(milliseconds: 500));
+            _fetchUsers();
           }
         } else {
           throw Exception('Failed to create users');
@@ -202,6 +227,7 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
                 labelColor: AppColors.blobSky,
                 unselectedLabelColor: AppColors.textSecondary,
                 tabs: const [
+                  Tab(text: 'Members List'),
                   Tab(text: 'Single Entry'),
                   Tab(text: 'Bulk Import (CSV)'),
                 ],
@@ -210,6 +236,7 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
                 child: TabBarView(
                   controller: _tabController,
                   children: [
+                    _buildMembersList(),
                     _buildSingleEntry(),
                     _buildBulkEntry(),
                   ],
@@ -332,6 +359,213 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _fetchUsers() async {
+    setState(() => _isLoadingUsers = true);
+    try {
+      final res = await Supabase.instance.client
+          .from('profiles')
+          .select()
+          .inFilter('role', ['student', 'parent'])
+          .order('created_at', ascending: false);
+      if (mounted) {
+        setState(() {
+          _users = List<Map<String, dynamic>>.from(res);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error fetching users: $e', style: const TextStyle(color: Colors.white)), backgroundColor: AppColors.error));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingUsers = false);
+    }
+  }
+
+  Future<void> _deleteUser(String userId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.bg1,
+        title: const Text('Confirm Delete', style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text('Are you sure you want to delete this user?', style: TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLoadingUsers = true);
+    try {
+      final res = await Supabase.instance.client.functions.invoke(
+        'manage-users',
+        body: {
+          'action': 'delete_user',
+          'targetUserId': userId,
+        }
+      );
+      if (res.status == 200) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User deleted successfully', style: TextStyle(color: Colors.white)), backgroundColor: AppColors.success));
+          _fetchUsers();
+        }
+      } else {
+        throw Exception('Failed to delete user');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error deleting user: $e', style: const TextStyle(color: Colors.white)), backgroundColor: AppColors.error));
+        setState(() => _isLoadingUsers = false);
+      }
+    }
+  }
+
+  Future<void> _editUser(Map<String, dynamic> user) async {
+    final nameCtrl = TextEditingController(text: user['full_name']);
+    final phoneCtrl = TextEditingController(text: user['phone']);
+    String role = user['role'] ?? 'student';
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppColors.bg1,
+          title: const Text('Edit User', style: TextStyle(color: AppColors.textPrimary)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildTextField('Full Name', nameCtrl, Icons.person_outline),
+                const SizedBox(height: 16),
+                _buildTextField('Phone Number', phoneCtrl, Icons.phone_outlined),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: role,
+                  dropdownColor: AppColors.bg1,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Role',
+                    labelStyle: const TextStyle(color: AppColors.textSecondary),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: const BorderSide(color: AppColors.glassBorder),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: const BorderSide(color: AppColors.blobSky),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'student', child: Text('Student')),
+                    DropdownMenuItem(value: 'parent', child: Text('Parent')),
+                    DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                  ],
+                  onChanged: (v) => setDialogState(() => role = v!),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save', style: TextStyle(color: AppColors.blobSky)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true) {
+      setState(() => _isLoadingUsers = true);
+      try {
+        final res = await Supabase.instance.client.functions.invoke(
+          'manage-users',
+          body: {
+            'action': 'update_user',
+            'targetUserId': user['id'],
+            'updates': {
+              'full_name': nameCtrl.text.trim(),
+              'phone': phoneCtrl.text.trim(),
+              'role': role,
+            }
+          }
+        );
+        if (res.status == 200) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User updated successfully', style: TextStyle(color: Colors.white)), backgroundColor: AppColors.success));
+            _fetchUsers();
+          }
+        } else {
+          throw Exception('Failed to update user');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error updating user: $e', style: const TextStyle(color: Colors.white)), backgroundColor: AppColors.error));
+          setState(() => _isLoadingUsers = false);
+        }
+      }
+    }
+  }
+
+  Widget _buildMembersList() {
+    if (_isLoadingUsers) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.blobSky));
+    }
+    if (_users.isEmpty) {
+      return const Center(child: Text('No users found', style: TextStyle(color: AppColors.textSecondary)));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(24),
+      itemCount: _users.length,
+      itemBuilder: (context, index) {
+        final user = _users[index];
+        return Card(
+          color: AppColors.bg1,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.glassBorder)),
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(16),
+            title: Text(user['full_name'] ?? 'No Name', style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                Text(user['email'] ?? 'No Email', style: const TextStyle(color: AppColors.textSecondary)),
+                const SizedBox(height: 4),
+                Text('Role: ${user['role'] ?? 'Unknown'} | Phone: ${user['phone'] ?? 'None'}', style: const TextStyle(color: AppColors.textSecondary)),
+              ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit, color: AppColors.blobSky),
+                  onPressed: () => _editUser(user),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                  onPressed: () => _deleteUser(user['id']),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

@@ -41,9 +41,11 @@ serve(async (req) => {
       throw new Error('Forbidden: Only admins and organizations can manage users')
     }
 
-    const { action, users } = await req.json()
+    const body = await req.json()
+    const { action } = body
 
     if (action === 'bulk_create') {
+      const { users } = body
       const results = []
       
       for (const u of users) {
@@ -55,17 +57,27 @@ serve(async (req) => {
           const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
             email: u.email,
             password: u.password || 'oracle2025',
-            email_confirm: true,
+            email_confirm: false, // Don't auto-confirm, so we can send an email
           })
 
           if (authError) throw authError
+
+          // Now send the verification email to their inbox
+          const { error: resendError } = await supabaseAdmin.auth.resend({
+            type: 'signup',
+            email: u.email,
+          })
+
+          if (resendError) {
+             console.warn('Could not send verification email: ', resendError.message)
+          }
 
           // 2. Create profile
           const { error: profileError } = await supabaseAdmin
             .from('profiles')
             .insert({
               id: authData.user.id,
-              full_name: u.full_name,
+              full_name: u.full_name || u.name,
               email: u.email,
               phone: u.phone,
               role: u.role || 'student',
@@ -99,6 +111,79 @@ serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ results }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      })
+    }
+    
+    if (action === 'delete_user') {
+      const { targetUserId } = body
+      if (!targetUserId) throw new Error('Missing targetUserId')
+
+      // Check organization logic if needed
+      if (profile.role === 'organization') {
+        const { data: targetProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('organization_id')
+          .eq('id', targetUserId)
+          .single()
+          
+        if (!targetProfile || targetProfile.organization_id !== userId) {
+           throw new Error('Forbidden: Cannot delete user outside your organization')
+        }
+      }
+
+      // Delete from auth (this cascades to profiles and students if set up that way, otherwise we do it manually)
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(targetUserId)
+      if (error) throw error
+      
+      // Also delete from profiles just in case cascade is not on
+      await supabaseAdmin.from('profiles').delete().eq('id', targetUserId)
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      })
+    }
+
+    if (action === 'update_user') {
+      const { targetUserId, updates } = body
+      if (!targetUserId) throw new Error('Missing targetUserId')
+
+      if (profile.role === 'organization') {
+        const { data: targetProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('organization_id')
+          .eq('id', targetUserId)
+          .single()
+          
+        if (!targetProfile || targetProfile.organization_id !== userId) {
+           throw new Error('Forbidden: Cannot update user outside your organization')
+        }
+      }
+
+      // We only allow updating full_name, phone, role
+      const profileUpdates = {
+        full_name: updates.full_name || updates.name,
+        phone: updates.phone,
+        role: updates.role,
+      }
+      
+      // Remove undefined values
+      Object.keys(profileUpdates).forEach(key => {
+        if (profileUpdates[key] === undefined) {
+          delete profileUpdates[key];
+        }
+      })
+
+      const { error } = await supabaseAdmin
+        .from('profiles')
+        .update(profileUpdates)
+        .eq('id', targetUserId)
+
+      if (error) throw error
+
+      return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
