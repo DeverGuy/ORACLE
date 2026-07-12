@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -23,18 +24,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _obscurePass = true;
   String _selectedRole = 'Student'; // Default for the portal type
   
+  Timer? _pollingTimer;
+  bool _isWaitingForVerification = false;
+
   final List<String> _portalRoles = ['Student', 'Parent'];
 
   Future<void> _signIn() async {
     setState(() { _loading = true; _error = null; });
-    try {
-      String email = _emailController.text.trim();
-      
-      // Custom mapping for the requested Admin username
-      if (email == 'ORACLE (MPBA)') {
-        email = 'admin@oracle.mpba.com';
-      }
+    
+    String email = _emailController.text.trim();
+    
+    // Custom mapping for the requested Admin username
+    if (email == 'ORACLE (MPBA)') {
+      email = 'admin@oracle.mpba.com';
+    }
 
+    try {
       await Supabase.instance.client.auth.signInWithPassword(
         email: email,
         password: _passwordController.text.trim(),
@@ -43,11 +48,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('remember_me', _rememberMe);
     } on AuthException catch (e) {
-      setState(() => _error = e.message);
+      if (e.message.toLowerCase().contains('email not confirmed')) {
+        _startPollingForVerification(email, _passwordController.text.trim());
+      } else {
+        setState(() => _error = e.message);
+      }
     } catch (e) {
       setState(() => _error = 'An unexpected error occurred.');
     } finally {
-      setState(() => _loading = false);
+      if (!_isWaitingForVerification && mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -66,8 +77,74 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  void _startPollingForVerification(String email, String password) async {
+    setState(() {
+      _isWaitingForVerification = true;
+      _error = 'Sending verification email...';
+      _loading = false;
+    });
+
+    try {
+      await Supabase.instance.client.auth.resend(
+        type: OtpType.signup,
+        email: email,
+      );
+      if (mounted) {
+        setState(() {
+          _error = 'Verification email sent. Check your inbox...';
+        });
+      }
+    } catch (e) {
+      // If it fails (e.g., rate limit), we still continue polling.
+      if (mounted) {
+        setState(() {
+          _error = 'Check your inbox for the verification email...';
+        });
+      }
+    }
+
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      try {
+        await Supabase.instance.client.auth.signInWithPassword(
+          email: email,
+          password: password,
+        );
+        timer.cancel();
+        if (mounted) {
+          setState(() {
+            _isWaitingForVerification = false;
+            _error = null;
+          });
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('remember_me', _rememberMe);
+        }
+      } on AuthException catch (e) {
+        if (!e.message.toLowerCase().contains('not confirmed')) {
+          timer.cancel();
+          if (mounted) {
+            setState(() {
+              _isWaitingForVerification = false;
+              _error = e.message;
+            });
+          }
+        }
+      } catch (e) {
+        timer.cancel();
+        if (mounted) {
+          setState(() {
+            _isWaitingForVerification = false;
+            _error = 'An unexpected error occurred during polling.';
+          });
+        }
+      }
+    });
+  }
+
+
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -216,11 +293,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         SizedBox(
                           height: 52,
                           child: ElevatedButton(
-                            onPressed: _loading ? null : _signIn,
-                            child: _loading
-                                ? const SizedBox(
-                                    width: 20, height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.bg0),
+                            onPressed: (_loading || _isWaitingForVerification) ? null : _signIn,
+                            child: _loading || _isWaitingForVerification
+                                ? Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const SizedBox(
+                                        width: 20, height: 20,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.bg0),
+                                      ),
+                                      if (_isWaitingForVerification) ...[
+                                        const SizedBox(width: 12),
+                                        const Text('Waiting for verification...', style: TextStyle(color: AppColors.bg0, fontSize: 15)),
+                                      ]
+                                    ],
                                   )
                                 : const Text('Sign In', style: TextStyle(fontSize: 16)),
                           ),

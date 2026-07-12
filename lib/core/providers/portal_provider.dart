@@ -23,17 +23,20 @@ final portalStudentProvider = FutureProvider.autoDispose<Map<String, dynamic>?>(
   final role = profile['role'] as String?;
 
   if (role == 'student') {
-    final studentRow = await client
-        .from(Tables.students)
-        .select()
-        .eq('user_id', user.id)
-        .maybeSingle();
-    if (studentRow != null) {
-      return {
-        ...studentRow,
-        'role': 'student',
-        'profile': profile,
-      };
+    final studentId = profile['student_id'] as String?;
+    if (studentId != null) {
+      final studentRow = await client
+          .from(Tables.students)
+          .select()
+          .eq('id', studentId)
+          .maybeSingle();
+      if (studentRow != null) {
+        return {
+          ...studentRow,
+          'role': 'student',
+          'profile': profile,
+        };
+      }
     }
   } else if (role == 'parent') {
     final studentId = profile['student_id'] as String?;
