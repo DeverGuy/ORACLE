@@ -362,7 +362,7 @@ class _AllocateFeeModalState extends ConsumerState<_AllocateFeeModal> {
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.bg2,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         border: Border.all(color: AppColors.glassBorder),
       ),

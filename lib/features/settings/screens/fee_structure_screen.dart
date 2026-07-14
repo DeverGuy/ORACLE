@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/models/models.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/glass_card.dart';
@@ -184,7 +185,7 @@ class FeeStructureScreen extends ConsumerWidget {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
+        backgroundColor: AppColors.bg2,
         title: const Text('Delete Fee Structure?', style: TextStyle(color: AppColors.textPrimary)),
         content: Text('Are you sure you want to delete "${fs.title}"?', style: const TextStyle(color: AppColors.textSecondary)),
         actions: [
@@ -295,7 +296,7 @@ class _AddFeeModalState extends State<_AddFeeModal> {
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.bg2,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         border: Border.all(color: AppColors.glassBorder),
       ),
