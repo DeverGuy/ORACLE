@@ -57,7 +57,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: kIsWeb ? Uri.base.origin : null,
+        redirectTo: kIsWeb ? Uri.base.toString() : null,
       );
     } on AuthException catch (e) {
       setState(() => _error = e.message);
