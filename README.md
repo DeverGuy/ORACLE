@@ -1,21 +1,59 @@
-<<<<<<< HEAD
-# ORACLE
-=======
-# oracle_fee_manager
+# ORACLE — School Fee Management System
 
-A new Flutter project.
+A comprehensive and modern School Fee Management System. ORACLE streamlines the fee collection, tracking, and management processes for schools, organizations, and parents. 
 
-## Getting Started
+## 🚀 Key Features
+- **Automated fee tracking:** Schedules, instalments and grace periods handled automatically with due-date reminders.
+- **Digital receipts & history:** Instant receipt generation, searchable payment history, and exportable audit trails for accounting.
+- **Role-based access:** Separate admin and staff privileges to protect financial data and control verification workflows.
+- **Real-time reporting:** Dashboards and interactive charts for collections, outstanding balances and trend analysis.
+- **Secure cloud sync:** Encrypted storage, daily backups and cross-device consistency minimise data loss risk.
 
-This project is a starting point for a Flutter application.
+## 🛠️ Technology Stack
+- **Frontend:** [Flutter](https://flutter.dev) (Cross-platform Web, Mobile, Desktop)
+- **Backend as a Service:** [Supabase](https://supabase.com) (Authentication, PostgreSQL Database, Storage)
+- **State Management:** [Riverpod](https://riverpod.dev)
+- **Routing:** [GoRouter](https://pub.dev/packages/go_router)
+- **Charts:** [FL Chart](https://pub.dev/packages/fl_chart)
 
-A few resources to get you started if this is your first Flutter project:
+## 🏗️ Project Architecture
+- `lib/core/` - Providers, models, themes, and utility classes.
+- `lib/features/` - Domain-specific modules:
+  - `/admin` - Admin portal views
+  - `/auth` - Login and authentication workflows
+  - `/dashboard` - Overview and statistics
+  - `/students` - Student directory and details
+  - `/payments` - Payment processing and history
+- `lib/router/` - GoRouter configuration
+- `lib/shared/` - Reusable UI components and widgets
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## ⚙️ Installation & Setup Guide
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
->>>>>>> a080f08 (Fee-Manager)
+### Prerequisites
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) (>=3.0.0 <4.0.0)
+- Supabase Account and Project
+
+### Steps
+1. **Clone the repository**
+   ```bash
+   git clone <your-repo-url>
+   cd ORACLE
+   ```
+2. **Install dependencies**
+   ```bash
+   flutter pub get
+   ```
+3. **Configure Supabase**
+   - Provide your Supabase URL and Anon Key in your environment or within `lib/main.dart` / configuration files.
+4. **Run the application**
+   ```bash
+   # Run on web
+   flutter run -d chrome
+   ```
+
+## 🔗 APIs & Integrations
+- **Supabase Auth:** Handles user authentication and role-based access control (Admin vs. Org vs. User).
+- **Supabase Database:** PostgreSQL backend storing students, organizations, transactions, and verification workflows.
+
+## 🌐 Live Demo
+*(Insert Live Web URL Here once deployed)*
