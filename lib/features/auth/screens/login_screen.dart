@@ -55,9 +55,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _signInWithGoogle() async {
     setState(() { _loading = true; _error = null; });
     try {
+      final redirectUrl = kIsWeb ? '${Uri.base.origin}/${widget.portalType}/login' : null;
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: kIsWeb ? Uri.base.toString() : null,
+        redirectTo: redirectUrl,
       );
     } on AuthException catch (e) {
       setState(() => _error = e.message);
