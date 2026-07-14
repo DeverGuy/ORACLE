@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -56,6 +57,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       await Supabase.instance.client.auth.signInWithOAuth(
         OAuthProvider.google,
+        redirectTo: kIsWeb ? Uri.base.origin : null,
       );
     } on AuthException catch (e) {
       setState(() => _error = e.message);
