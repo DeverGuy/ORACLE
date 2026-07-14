@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/models/models.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_theme.dart';
@@ -42,6 +43,10 @@ class StudentLedgerScreen extends ConsumerWidget {
                       ],
                     ),
                     const Spacer(),
+                    IconButton(
+                      onPressed: () => _showAllocateFeeModal(context, ref, studentId),
+                      icon: const Icon(Icons.add_circle_outline, color: AppColors.blobSky),
+                    ),
                     IconButton(
                       onPressed: () =>
                           ref.invalidate(studentAllocationsProvider(studentId)),
@@ -114,6 +119,18 @@ class StudentLedgerScreen extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showAllocateFeeModal(BuildContext context, WidgetRef ref, String studentId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AllocateFeeModal(
+        studentId: studentId,
+        onAllocated: () => ref.invalidate(studentAllocationsProvider(studentId)),
       ),
     );
   }
@@ -277,6 +294,136 @@ class _StatusChip extends StatelessWidget {
             fontSize: 12,
             fontWeight: FontWeight.w700,
             color: color),
+      ),
+    );
+  }
+}
+
+class _AllocateFeeModal extends ConsumerStatefulWidget {
+  const _AllocateFeeModal({required this.studentId, required this.onAllocated});
+  final String studentId;
+  final VoidCallback onAllocated;
+
+  @override
+  ConsumerState<_AllocateFeeModal> createState() => _AllocateFeeModalState();
+}
+
+class _AllocateFeeModalState extends ConsumerState<_AllocateFeeModal> {
+  FeeStructure? _selectedFee;
+  DateTime _dueDate = DateTime.now().add(const Duration(days: 30));
+  bool _loading = false;
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+    );
+    if (picked != null) {
+      setState(() => _dueDate = picked);
+    }
+  }
+
+  Future<void> _allocate() async {
+    if (_selectedFee == null) return;
+    setState(() => _loading = true);
+    try {
+      await Supabase.instance.client.from('student_allocations').insert({
+        'student_id': widget.studentId,
+        'fee_structure_id': _selectedFee!.id,
+        'due_date': _dueDate.toIso8601String(),
+        'base_amount': _selectedFee!.baseAmount,
+        'status': 'UNPAID',
+      });
+      widget.onAllocated();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final feeAsync = ref.watch(feeStructuresProvider);
+    final fmt = DateFormat('MMM dd, yyyy');
+
+    return Container(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.add_circle_outline, color: AppColors.blobSky),
+              const SizedBox(width: 12),
+              Text('Allocate Fee', style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          feeAsync.when(
+            data: (fees) {
+              if (fees.isEmpty) {
+                return const Text('No fee structures available.', style: TextStyle(color: AppColors.textSecondary));
+              }
+              return DropdownButtonFormField<FeeStructure>(
+                value: _selectedFee,
+                dropdownColor: AppColors.bg2,
+                hint: const Text('Select Fee Structure', style: TextStyle(color: AppColors.textMuted)),
+                style: const TextStyle(color: AppColors.textPrimary, fontFamily: 'Outfit'),
+                decoration: const InputDecoration(labelText: 'Fee Structure'),
+                items: fees.map((f) => DropdownMenuItem(
+                  value: f,
+                  child: Text('${f.title} (₹${f.baseAmount.toStringAsFixed(0)})'),
+                )).toList(),
+                onChanged: (v) => setState(() => _selectedFee = v),
+              );
+            },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Text('Error loading fees: $e', style: const TextStyle(color: AppColors.error)),
+          ),
+          const SizedBox(height: 16),
+          InkWell(
+            onTap: _pickDate,
+            borderRadius: BorderRadius.circular(12),
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Due Date',
+                suffixIcon: Icon(Icons.calendar_today, size: 18, color: AppColors.textSecondary),
+              ),
+              child: Text(fmt.format(_dueDate), style: const TextStyle(color: AppColors.textPrimary)),
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: (_loading || _selectedFee == null) ? null : _allocate,
+            child: _loading
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Allocate to Student'),
+          ),
+        ],
       ),
     );
   }

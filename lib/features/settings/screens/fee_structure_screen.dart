@@ -107,13 +107,37 @@ class FeeStructureScreen extends ConsumerWidget {
                                       ],
                                     ),
                                   ),
-                                  Text(
-                                    fmt.format(fs.baseAmount),
-                                    style: const TextStyle(
-                                        fontFamily: 'Outfit',
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.textPrimary),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        fmt.format(fs.baseAmount),
+                                        style: const TextStyle(
+                                            fontFamily: 'Outfit',
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.textPrimary),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.edit_outlined, size: 18, color: AppColors.textSecondary),
+                                            onPressed: () => _showAddFeeModal(context, ref, initialData: fs),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
+                                            onPressed: () => _deleteFee(context, ref, fs),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
@@ -144,19 +168,55 @@ class FeeStructureScreen extends ConsumerWidget {
         _           => Icons.receipt_outlined,
       };
 
-  void _showAddFeeModal(BuildContext context, WidgetRef ref) {
+  void _showAddFeeModal(BuildContext context, WidgetRef ref, {FeeStructure? initialData}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AddFeeModal(onAdded: () => ref.invalidate(feeStructuresProvider)),
+      builder: (_) => _AddFeeModal(
+        onAdded: () => ref.invalidate(feeStructuresProvider),
+        initialData: initialData,
+      ),
     );
+  }
+
+  Future<void> _deleteFee(BuildContext context, WidgetRef ref, FeeStructure fs) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Delete Fee Structure?', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text('Are you sure you want to delete "${fs.title}"?', style: const TextStyle(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await Supabase.instance.client.from('fee_structures').delete().eq('id', fs.id);
+      ref.invalidate(feeStructuresProvider);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
   }
 }
 
 class _AddFeeModal extends StatefulWidget {
-  const _AddFeeModal({required this.onAdded});
+  const _AddFeeModal({required this.onAdded, this.initialData});
   final VoidCallback onAdded;
+  final FeeStructure? initialData;
 
   @override
   State<_AddFeeModal> createState() => _AddFeeModalState();
@@ -174,6 +234,17 @@ class _AddFeeModalState extends State<_AddFeeModal> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.initialData != null) {
+      _titleController.text = widget.initialData!.title;
+      _amountController.text = widget.initialData!.baseAmount.toString();
+      _category = widget.initialData!.category;
+      _year = widget.initialData!.academicYear;
+    }
+  }
+
+  @override
   void dispose() {
     _titleController.dispose();
     _amountController.dispose();
@@ -186,12 +257,21 @@ class _AddFeeModalState extends State<_AddFeeModal> {
     if (title.isEmpty || amount == null || amount <= 0) return;
     setState(() => _loading = true);
     try {
-      await Supabase.instance.client.from('fee_structures').insert({
-        'title': title,
-        'base_amount': amount,
-        'category': _category,
-        'academic_year': _year,
-      });
+      if (widget.initialData != null) {
+        await Supabase.instance.client.from('fee_structures').update({
+          'title': title,
+          'base_amount': amount,
+          'category': _category,
+          'academic_year': _year,
+        }).eq('id', widget.initialData!.id);
+      } else {
+        await Supabase.instance.client.from('fee_structures').insert({
+          'title': title,
+          'base_amount': amount,
+          'category': _category,
+          'academic_year': _year,
+        });
+      }
       widget.onAdded();
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -207,77 +287,84 @@ class _AddFeeModalState extends State<_AddFeeModal> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: GlassCard(
-        borderRadius: 24,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.add_circle_outline, color: AppColors.blobSky),
-                const SizedBox(width: 10),
-                Text('New Fee Structure',
-                    style: Theme.of(context).textTheme.titleLarge),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close, color: AppColors.textSecondary),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _titleController,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(labelText: 'Fee Title'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(
-                labelText: 'Base Amount (₹)',
-                prefixIcon: Icon(Icons.currency_rupee, color: AppColors.textSecondary),
+    return Container(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 24,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(widget.initialData != null ? Icons.edit_outlined : Icons.add_circle_outline, color: AppColors.blobSky),
+              const SizedBox(width: 12),
+              Text(widget.initialData != null ? 'Edit Fee Structure' : 'New Fee Structure',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                onPressed: () => Navigator.pop(context),
               ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _titleController,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(labelText: 'Fee Title'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _amountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: 'Base Amount (₹)',
+              prefixIcon: Icon(Icons.currency_rupee, color: AppColors.textSecondary),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _category,
-              dropdownColor: AppColors.bg2,
-              style: const TextStyle(color: AppColors.textPrimary, fontFamily: 'Outfit'),
-              decoration: const InputDecoration(labelText: 'Category'),
-              items: _categories.map((c) => DropdownMenuItem(
-                value: c,
-                child: Text(c[0].toUpperCase() + c.substring(1)),
-              )).toList(),
-              onChanged: (v) => setState(() => _category = v!),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _year,
-              dropdownColor: AppColors.bg2,
-              style: const TextStyle(color: AppColors.textPrimary, fontFamily: 'Outfit'),
-              decoration: const InputDecoration(labelText: 'Academic Year'),
-              items: ['2024-25', '2025-26', '2026-27'].map((y) =>
-                  DropdownMenuItem(value: y, child: Text(y))).toList(),
-              onChanged: (v) => setState(() => _year = v!),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _loading ? null : _save,
-              child: _loading
-                  ? const SizedBox(
-                      width: 18, height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppColors.bg0))
-                  : const Text('Create Fee Structure'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _category,
+            dropdownColor: AppColors.bg2,
+            style: const TextStyle(color: AppColors.textPrimary, fontFamily: 'Outfit'),
+            decoration: const InputDecoration(labelText: 'Category'),
+            items: _categories.map((c) => DropdownMenuItem(
+              value: c,
+              child: Text(c[0].toUpperCase() + c.substring(1)),
+            )).toList(),
+            onChanged: (v) => setState(() => _category = v!),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _year,
+            dropdownColor: AppColors.bg2,
+            style: const TextStyle(color: AppColors.textPrimary, fontFamily: 'Outfit'),
+            decoration: const InputDecoration(labelText: 'Academic Year'),
+            items: ['2024-25', '2025-26', '2026-27'].map((y) =>
+                DropdownMenuItem(value: y, child: Text(y))).toList(),
+            onChanged: (v) => setState(() => _year = v!),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _loading ? null : _save,
+            child: _loading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Text(widget.initialData != null ? 'Update Fee Structure' : 'Create Fee Structure'),
+          ),
+        ],
       ),
     );
   }
