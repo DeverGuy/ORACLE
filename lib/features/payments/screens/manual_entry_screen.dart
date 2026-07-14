@@ -218,6 +218,22 @@ class _ManualEntryScreenState extends ConsumerState<ManualEntryScreen> {
   }
 }
 
+class _PendingAllocation {
+  final String allocationId;
+  final String studentName;
+  final String rollNumber;
+  final String feeName;
+
+  _PendingAllocation({
+    required this.allocationId,
+    required this.studentName,
+    required this.rollNumber,
+    required this.feeName,
+  });
+
+  String get displayString => '$studentName — $feeName';
+}
+
 // Simplified allocation picker — fetches unpaid allocations
 class _AllocationPicker extends StatefulWidget {
   const _AllocationPicker({required this.onSelected});
@@ -228,93 +244,118 @@ class _AllocationPicker extends StatefulWidget {
 }
 
 class _AllocationPickerState extends State<_AllocationPicker> {
-  List<Map<String, dynamic>> _results = [];
   bool _loading = false;
-  final _searchController = TextEditingController();
 
-  Future<void> _search(String query) async {
-    if (query.length < 2) return;
+  Future<Iterable<_PendingAllocation>> _search(String query) async {
+    if (query.length < 2) return const [];
     setState(() => _loading = true);
     try {
-      final res = await Supabase.instance.client
+      final res1 = await Supabase.instance.client
           .from('students')
           .select('id, roll_number, profiles!inner(full_name), student_allocations!inner(id, status, fee_structures!inner(title))')
-          .or('roll_number.ilike.%$query%,profiles.full_name.ilike.%$query%')
+          .ilike('roll_number', '%$query%')
           .neq('student_allocations.status', 'PAID')
-          .limit(10);
-      setState(() => _results = (res as List).cast<Map<String, dynamic>>());
+          .limit(5);
+
+      final res2 = await Supabase.instance.client
+          .from('students')
+          .select('id, roll_number, profiles!inner(full_name), student_allocations!inner(id, status, fee_structures!inner(title))')
+          .ilike('profiles.full_name', '%$query%')
+          .neq('student_allocations.status', 'PAID')
+          .limit(5);
+
+      final combined = [...(res1 as List), ...(res2 as List)];
+      final map = <String, _PendingAllocation>{};
+
+      for (var student in combined) {
+        final allocations = student['student_allocations'] as List? ?? [];
+        for (var alloc in allocations) {
+          final allocId = alloc['id'] as String;
+          map[allocId] = _PendingAllocation(
+            allocationId: allocId,
+            studentName: student['profiles']?['full_name'] ?? 'Unknown',
+            rollNumber: student['roll_number'] ?? '',
+            feeName: alloc['fee_structures']?['title'] ?? 'Fee',
+          );
+        }
+      }
+      return map.values;
+    } catch (e) {
+      return const [];
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: _searchController,
-          onChanged: _search,
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: InputDecoration(
-            labelText: 'Search student (name or roll no.)',
-            prefixIcon: const Icon(Icons.person_search_outlined,
-                color: AppColors.textSecondary),
-            suffixIcon: _loading
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.blobSky)))
-                : null,
-          ),
-        ),
-        if (_results.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.bg2,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            child: Column(
-              children: _results.expand((student) {
-                final allocations = student['student_allocations'] as List? ?? [];
-                return allocations.map((alloc) {
-                  final allocationId = alloc['id'] as String;
-                  final feeName =
-                      alloc['fee_structures']?['title'] as String? ?? 'Fee';
-                  final studentName =
-                      student['profiles']?['full_name'] as String? ?? 'Student';
-                  final roll = student['roll_number'] as String;
-                  return ListTile(
-                    dense: true,
-                    title: Text('$studentName ($roll)',
-                        style: const TextStyle(
-                            color: AppColors.textPrimary, fontSize: 13)),
-                    subtitle: Text(feeName,
-                        style: const TextStyle(
-                            color: AppColors.textMuted, fontSize: 11)),
-                    onTap: () {
-                      _searchController.text = '$studentName — $feeName';
-                      setState(() => _results = []);
-                      widget.onSelected(allocationId, studentName);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Autocomplete<_PendingAllocation>(
+          optionsBuilder: (textEditingValue) => _search(textEditingValue.text),
+          displayStringForOption: (option) => option.displayString,
+          onSelected: (option) {
+            widget.onSelected(option.allocationId, option.studentName);
+          },
+          fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+            return TextField(
+              controller: controller,
+              focusNode: focusNode,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: InputDecoration(
+                labelText: 'Search student (name or roll no.)',
+                prefixIcon: const Icon(Icons.person_search_outlined,
+                    color: AppColors.textSecondary),
+                suffixIcon: _loading
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.blobSky)))
+                    : null,
+              ),
+            );
+          },
+          optionsViewBuilder: (context, onSelected, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 4,
+                color: Colors.transparent,
+                child: Container(
+                  width: constraints.maxWidth,
+                  margin: const EdgeInsets.only(top: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg2,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.glassBorder),
+                  ),
+                  constraints: const BoxConstraints(maxHeight: 250),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    itemBuilder: (context, index) {
+                      final option = options.elementAt(index);
+                      return ListTile(
+                        dense: true,
+                        title: Text('${option.studentName} (${option.rollNumber})',
+                            style: const TextStyle(
+                                color: AppColors.textPrimary, fontSize: 13)),
+                        subtitle: Text(option.feeName,
+                            style: const TextStyle(
+                                color: AppColors.textMuted, fontSize: 11)),
+                        onTap: () => onSelected(option),
+                      );
                     },
-                  );
-                });
-              }).toList(),
-            ),
-          ),
-        ],
-      ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
