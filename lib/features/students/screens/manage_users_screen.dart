@@ -7,6 +7,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/glass_card.dart';
+import '../../../core/models/models.dart';
+import '../../../core/providers/providers.dart';
 
 class ManageUsersScreen extends ConsumerStatefulWidget {
   const ManageUsersScreen({super.key});
@@ -24,6 +26,7 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
   final _phoneCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   String _selectedRole = 'student';
+  final Set<FeeStructure> _selectedFees = {};
   
   bool _isSubmitting = false;
   bool _isLoadingUsers = false;
@@ -80,18 +83,44 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
         }
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User created successfully!', style: TextStyle(color: Colors.white)), backgroundColor: AppColors.success));
-          _nameCtrl.clear();
-          _emailCtrl.clear();
-          _phoneCtrl.clear();
-          _passwordCtrl.clear();
-          
-          // Switch to Members List tab
-          _tabController.animateTo(0);
-          
-          // Slight delay to ensure DB commit is visible
-          await Future.delayed(const Duration(milliseconds: 500));
-          _fetchUsers();
+          // If we have selected fees, assign them to the new user
+          if (_selectedFees.isNotEmpty) {
+            final email = _emailCtrl.text.trim();
+            final profileRes = await Supabase.instance.client
+                .from('profiles')
+                .select('id')
+                .eq('email', email)
+                .maybeSingle();
+
+            if (profileRes != null) {
+              final newUserId = profileRes['id'];
+              final allocations = _selectedFees.map((fee) => {
+                'student_id': newUserId,
+                'fee_structure_id': fee.id,
+                'due_date': DateTime.now().add(const Duration(days: 30)).toIso8601String(),
+                'base_amount': fee.baseAmount,
+                'status': 'UNPAID',
+              }).toList();
+
+              await Supabase.instance.client.from('student_allocations').insert(allocations);
+            }
+          }
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User created successfully!', style: TextStyle(color: Colors.white)), backgroundColor: AppColors.success));
+            _nameCtrl.clear();
+            _emailCtrl.clear();
+            _phoneCtrl.clear();
+            _passwordCtrl.clear();
+            _selectedFees.clear();
+            
+            // Switch to Members List tab
+            _tabController.animateTo(0);
+            
+            // Slight delay to ensure DB commit is visible
+            await Future.delayed(const Duration(milliseconds: 500));
+            _fetchUsers();
+          }
         }
       } else {
         throw Exception('Failed to create user');
@@ -293,6 +322,41 @@ class _ManageUsersScreenState extends ConsumerState<ManageUsersScreen> with Sing
                 ),
                 const SizedBox(height: 16),
                 _buildTextField('Password (Optional)', _passwordCtrl, Icons.lock_outline, obscureText: true),
+                const SizedBox(height: 24),
+                const Text('Assign Fee Structures (Optional)', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                ref.watch(feeStructuresProvider).when(
+                  data: (fees) {
+                    if (fees.isEmpty) return const Text('No fee structures available', style: TextStyle(color: AppColors.textSecondary));
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: fees.map((f) {
+                        final isSelected = _selectedFees.contains(f);
+                        return FilterChip(
+                          label: Text(f.title),
+                          selected: isSelected,
+                          onSelected: (selected) {
+                            setState(() {
+                              if (selected) _selectedFees.add(f);
+                              else _selectedFees.remove(f);
+                            });
+                          },
+                          backgroundColor: AppColors.bg1,
+                          selectedColor: AppColors.blobSky.withOpacity(0.2),
+                          checkmarkColor: AppColors.blobSky,
+                          labelStyle: TextStyle(color: isSelected ? AppColors.blobSky : AppColors.textSecondary),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(color: isSelected ? AppColors.blobSky : AppColors.glassBorder),
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (err, _) => Text('Error: $err', style: const TextStyle(color: AppColors.error)),
+                ),
                 const SizedBox(height: 32),
                 SizedBox(
                   width: double.infinity,
