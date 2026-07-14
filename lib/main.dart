@@ -19,11 +19,7 @@ Future<void> main() async {
     ),
   );
 
-  final prefs = await SharedPreferences.getInstance();
-  final rememberMe = prefs.getBool('remember_me') ?? false;
-  if (!rememberMe) {
-    await Supabase.instance.client.auth.signOut();
-  }
+  // Removed rememberMe check to allow OAuth redirects to succeed
 
   runApp(
     const ProviderScope(
